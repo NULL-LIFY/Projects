@@ -1,0 +1,103 @@
+DROP VIEW IF EXISTS ecom1_dt_cleaned;
+
+CREATE VIEW ecom1_dt_cleaned AS
+SELECT
+    t.customer_id,
+    t.transaction_status status,
+    g.gender_name gender,
+    c.join_date,
+    b.branch_id,
+    ct.city_name city,
+    m.merchant_name  merchant,
+    t.transaction_date,
+    t.burn_date,
+    CASE
+      WHEN NULLIF(t.burn_date, '') IS NOT NULL AND NULLIF(t.burn_date, '')::date > (
+      SELECT MAX(t.transaction_date::date)
+       FROM transactions t)
+      THEN AGE( 
+       (SELECT MAX(t.transaction_date::date)
+       FROM transactions t), t.transaction_date::date )
+    	WHEN NULLIF(t.burn_date, '') IS NOT NULL
+    	THEN AGE(t.burn_date::date, t.transaction_date::date)
+    	ELSE AGE( 
+    	 (SELECT MAX(t.transaction_date::date)
+    	 FROM transactions t), t.transaction_date::date )
+    END AS lifetime_days
+FROM transactions t
+LEFT  JOIN customers c
+    ON t.customer_id = c.customer_id
+LEFT JOIN genders g
+    ON c.gender_id = g.gender_id
+LEFT JOIN cities ct
+	ON c.city_id = ct.city_id 
+LEFT JOIN branches b 
+	ON t.branch_id = b.branch_id
+LEFT JOIN merchants m 
+	ON b.merchant_id = m.merchant_id
+ORDER BY t.transaction_date::date ASC;
+
+-- Cleaned data
+SELECT * FROM ecom1_dt_cleaned
+
+-- What is the overall active vs claimed contract rate?
+SELECT status, COUNT(*) AS contract
+FROM ecom1_dt_cleaned
+GROUP BY status;
+
+-- Which merchants are issuing the most warranties?
+SELECT merchant, COUNT(*) AS claimed_count
+FROM ecom1_dt_cleaned
+WHERE status = 'burned'
+GROUP BY merchant
+ORDER BY claimed_count DESC;
+
+-- Which merchants have the highest claim rate?
+SELECT merchant, 
+ROUND(COUNT(CASE WHEN status = 'burned' THEN 1 END)/ROUND(COUNT(*), 1) * 100.0, 2) AS claim_rate
+FROM ecom1_dt_cleaned
+GROUP BY merchant
+ORDER BY claim_rate DESC;
+
+-- Which cities have the highest warranty coverage?
+SELECT city, COUNT(*) AS claimed_count
+FROM ecom1_dt_cleaned
+WHERE status = 'burned'
+GROUP BY city
+ORDER BY claimed_count DESC;
+
+-- Which cities have the highest claim rate?
+SELECT city, 
+ROUND(COUNT(CASE WHEN status = 'burned' THEN 1 END)/ROUND(COUNT(*), 1) * 100.0, 2) AS claim_rate
+FROM ecom1_dt_cleaned
+GROUP BY city
+ORDER BY claim_rate DESC;
+
+-- How many warranties does an average customer hold?
+SELECT ROUND(COUNT(*)::numeric/COUNT(DISTINCT customer_id), 2) AS avg_warr_cust
+FROM ecom1_dt_cleaned;
+
+-- How long does a warranty last on average before a claim is filed?
+SELECT ROUND(AVG(EXTRACT(EPOCH FROM lifetime_days) / 84600)) AS avg_lifetime_days
+FROM ecom1_dt_cleaned
+WHERE status = 'burned';
+
+-- Is the program growing month over month?
+SELECT TO_CHAR(DATE_TRUNC('month', transaction_date::date), 'YYYY-Mon') AS yyyy_mm,
+COUNT(*) AS total_cust,
+COUNT(CASE WHEN status = 'subscribed' THEN 1 END) AS active_cust,
+COUNT(CASE WHEN status = 'burned' THEN 1 END) AS claimed_cust
+FROM ecom1_dt_cleaned
+GROUP BY yyyy_mm
+ORDER BY yyyy_mm DESC;
+
+
+-- How are warranties distributed across merchants and cities?
+SELECT 
+    branch_id,
+    merchant,
+    city,
+    COUNT(*) AS total_contracts
+FROM ecom1_dt_cleaned
+GROUP BY branch_id, merchant, city
+ORDER BY branch_id;
