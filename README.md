@@ -3,7 +3,7 @@
 A Bronze → Silver → Gold pipeline in plain SQL on the Brazilian Olist dataset (9 tables, ~100K orders), built to answer three retail questions: **revenue performance, customer retention, and delivery performance.**
 
 
-![Medallion architecture diagram](Projects/Medallion_Diagram.png)
+![Medallion architecture diagram](Medallion_Diagram.png)
 
 ## Architecture
 
